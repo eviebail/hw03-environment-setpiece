@@ -1,5 +1,7 @@
 Buffer B:
 
+iChannel0 = Buffer A
+
 #define MAX_MARCHING_STEPS 50.0
 #define MAX_DIST 40.0
 #define MIN_DIST 5.0
