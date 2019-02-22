@@ -1,0 +1,29 @@
+Image:
+iChannelo = Buffer B
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+    vec2 fs_UV = fragCoord / iResolution.xy;
+	vec4 diffuseColor = texture(iChannel0, fs_UV);
+    vec4 weightedAvg = vec4(0,0,0,0);
+    float w_counter = 0.0;
+     for (int i = -8; i <= 8; i+=1) {
+        for (int j = -8; j <= 8; j+=1) {
+            //adjust the x and y coordinates to account for the width and height of the screen
+            float x = fs_UV.x + float(i)*(1.0 / iResolution.x);
+            float y = fs_UV.y + float(j)*(1.0 / iResolution.y);
+            vec4 col = texture(iChannel0, vec2(x,y));
+            //calculate the luminance for the pixel
+            float luminance = col.r * 0.21 + col.g * 0.72 +  0.07 * col.b;
+            float weight = (1.0 / (2.0*3.14159 * 21.0)) *pow(2.71828, (-(float(i)*float(i) + float(j)*float(j)) / (4.0 * 21.0)));
+            if (luminance > 0.60) {
+                //if it is above threshold, factor it into the weighted average
+                weightedAvg += weight * texture(iChannel0, vec2(x,y));
+            }
+            w_counter += weight;
+        }
+     }
+      weightedAvg /= w_counter;
+      fragColor = vec4(diffuseColor.rgb + weightedAvg.rgb, diffuseColor.a);
+
+    
+}
