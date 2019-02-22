@@ -8,6 +8,8 @@ Project: https://www.shadertoy.com/view/3sBGDd
 
 Website: https://evelyn.pb.studio
 
+<img src="hw3_img.png">
+
 Features
 
 This project is inspired by a scene from the Pixar Short, Smash and Grab. 
