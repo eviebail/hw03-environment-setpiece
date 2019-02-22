@@ -1,0 +1,574 @@
+Buffer B:
+
+#define MAX_MARCHING_STEPS 50.0
+#define MAX_DIST 40.0
+#define MIN_DIST 5.0
+#define EPSILON 0.005
+#define MAX 5.0
+#define MIN 0.1
+
+float random(vec2 ab) 
+{
+	float f = (cos(dot(ab ,vec2(21.9898,78.233))) * 43758.5453);
+	return fract(f);
+}
+
+vec2 random3( vec2 p ) {
+    return fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5453);
+}
+
+float noise(in vec2 xy) 
+{
+	vec2 ij = floor(xy);
+	vec2 uv = xy-ij;
+	uv = uv*uv*(3.0-2.0*uv);
+	
+
+	float a = random(vec2(ij.x, ij.y ));
+	float b = random(vec2(ij.x+1., ij.y));
+	float c = random(vec2(ij.x, ij.y+1.));
+	float d = random(vec2(ij.x+1., ij.y+1.));
+	float k0 = a;
+	float k1 = b-a;
+	float k2 = c-a;
+	float k3 = a-b-c+d;
+	return (k0 + k1*uv.x + k2*uv.y + k3*uv.x*uv.y);
+}
+
+vec3 myLerp (vec3 color1, vec3 color2, float percent) {
+ 	vec3 result = (color2 - color1) * percent + color1;
+    return result;
+}
+
+mat4 rotateX(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+
+    return mat4(
+        vec4(1, 0, 0, 0),
+        vec4(0, c, s, 0),
+        vec4(0, -s, c, 0),
+        vec4(0, 0, 0, 1)
+    );
+}
+
+mat4 rotateZ(float theta) {
+    float c = cos(theta);
+    float s = sin(theta);
+
+    return mat4(
+        vec4(c, s, 0, 0),
+        vec4(-s, c, 0, 0),
+        vec4(0, 0, 1, 0),
+        vec4(0, 0, 0, 1)
+    );
+}
+
+float rand(vec2 co){
+    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+}
+
+float interpNoise2D(float x, float y) {
+  float intX = floor(x);
+  float fractX = fract(x);
+  float intY = floor(y);
+  float fractY = fract(y);
+
+  float v1 = rand(vec2(intX, intY));
+  float v2 = rand(vec2(intX + 1.0, intY));
+  float v3 = rand(vec2(intX, intY + 1.0));
+  float v4 = rand(vec2(intX + 1.0, intY + 1.0));
+
+  float i1 = mix(v1, v2, fractX);
+  float i2 = mix(v3, v4, fractX);
+
+  return mix(i1, i2, fractY);
+}
+
+float fbm(float x, float y) {
+  float roughness = 1.0;
+  float total = 0.0;
+  float persistence = 0.5;
+  int octaves = 2;
+
+  for (int i = 0; i < 8; i++) {
+    float freq = pow(2.0, float(i));
+    float amp = pow(persistence, float(i));
+
+    total += interpNoise2D(x * freq, y * freq) * amp * roughness;
+    roughness *= interpNoise2D(x*freq, y*freq);
+  }
+  return total;
+}
+
+//position
+float sdBox(vec3 p, vec3 b)
+{
+  vec3 d = abs(p) - b;
+  return length(max(d,0.0))
+         + min(max(d.x,max(d.y,d.z)),0.0); // remove this line for an only partially signed sdf 
+}
+
+float sdRoundBox( vec3 p, vec3 b, float r )
+{
+  vec3 d = abs(p) - b;
+  return length(max(d,0.0)) - r
+         + min(max(d.x,max(d.y,d.z)),0.0); // remove this line for an only partially signed sdf 
+}
+
+float intersectSDF(float distA, float distB) {
+  return max(distA, distB);
+}
+
+float subtractSDF(float distA, float distB) {
+  return max(-distA, distB);
+}
+
+float smooth_min(float a, float b, float k) {
+    float h = clamp(0.5 + 0.5*(b-a)/k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+float parabola(float x, float k) {
+	return pow(4.0*x*(1.0 - x), k);
+}
+
+float worley (vec3 vs_Pos, float c_size, float multiplier) {
+  float cell_size = c_size;
+  vec2 cell = vs_Pos.xz / cell_size;
+  float noise = 0.0;
+  
+  //get the cell pixel position is in
+  vec2 fract_pos = fract(cell);
+  vec2 int_pos = floor(cell);
+
+  float m_dist = 1.0;
+
+  //compare pos to the randpoints in the neighboring cells and save the smallest dist
+  for (int y= -1; y <= 1; y++) {
+    for (int x= -1; x <= 1; x++) {
+      // Neighbor place in the grid
+      vec2 neighbor = vec2(float(x),float(y));
+      vec2 randpt = random3(int_pos + neighbor);
+
+      vec2 diff = neighbor + randpt - fract_pos;
+      float dist = length(diff);
+      
+      // Keep the closer distance
+      if (dist < m_dist) {
+        m_dist = dist;
+        vec2 pt = (randpt + int_pos + neighbor) / cell_size;
+        noise = m_dist*multiplier;
+      }
+    } 
+  }
+  return noise;
+}
+
+vec2 sceneMap(vec3 samplePoint) {
+    
+    float track = sdRoundBox(samplePoint + vec3(0.0,7.0, -1.5), vec3(20.0,2.0,0.1), 0.2);
+    
+    float tracks = track;
+    for (int i = 0; i < 4; i++) {
+       float hole = sdRoundBox(samplePoint + vec3(i*4,7.5, -1.5), vec3(1.5,2.0,2.0), 0.3);
+        tracks = subtractSDF(hole, tracks);
+    }
+    for (int i = 0; i < 4; i++) {
+       float hole = sdRoundBox(samplePoint + vec3(-i*4,7.5, -1.5), vec3(1.5,2.0,2.0), 0.3);
+        tracks = subtractSDF(hole, tracks);
+    }
+    float groundDist = 100000000000.0;
+    
+    if (samplePoint.y < 0.1) {
+            vec3 newPos = samplePoint + vec3(0.0, 8.5 + 2.0*float(int(random(samplePoint.xy))), 0.0);
+    float noise2 = fbm(worley(samplePoint, 1.0, 0.4), worley(samplePoint, 1.0, 0.4));
+    noise2 = pow(noise2,3.0);
+    groundDist = sdBox(newPos + vec3(noise2), vec3(20.0,1.0,7.0));
+    }
+
+    
+    /////// SKY ELEMENTS //////////
+    float centerCity = sdBox(samplePoint + vec3(0.0, -6.0, -5.0), 
+                             vec3(0.2,5.0,2.0));
+    
+    for (int x = 0; x < 3; ++x) {
+        for (int z = 0; z < 3; z++) {
+            vec3 pos = samplePoint + vec3(2.5 - 1.0 * float(x)- rand(vec2(x,z)), 
+                                                 -6.0 - 6.0 * rand(vec2(x,z)), 
+                                                 -5.0 - 0.2 * float(z));
+            float cit = sdBox(pos, vec3(0.2, 5.0 + 2.0 * rand(vec2(x,z)), 1.0)); //vec3(2.0,random3(pos.xz), 1.0)
+            centerCity = smooth_min(centerCity, cit, 0.0);
+        }
+    }
+
+	float centerCity4 = sdBox(samplePoint - vec3(-1.0, 0.0, 6.0), vec3(0.2,8.0,0.1));
+    float city = smooth_min(centerCity, centerCity4, 0.0);
+    
+    //right city
+    vec3 point = vec3(rotateZ(-6.0) * vec4(samplePoint + vec3(-15.0, -7.0, -5.0), 1.0));    
+    centerCity = sdBox(point, vec3(0.2,6.0,0.5));
+    float city2 = centerCity;
+    for (int x = 0; x < 4; ++x) {
+        for (int z = 0; z < 3; z++) {
+    		point = vec3(rotateZ(-6.0) * vec4(samplePoint 
+                                              
+                                              + vec3(-14.0 - 1.0 * float(x)- rand(vec2(x,z)), 
+                                                                 -7.0 - 6.0 * rand(vec2(x,z)), 
+                                                                 -5.0 - 1.0 * float(z)), 
+                                              					 1.0));
+    		centerCity4 = sdBox(point, vec3(0.2,6.0 + 2.0 * rand(vec2(x,z)),0.2));
+    		city2 = smooth_min(city2, centerCity4, 0.0);
+        }
+    }
+    
+    //last one!!
+    point = vec3(rotateZ(-6.0) * vec4(samplePoint + vec3(-14.0, 0.0, -7.0), 1.0));
+    centerCity4 = sdBox(point, vec3(0.2,8.0,0.1));
+    city2 = smooth_min(city2, centerCity4, 0.0);
+    //right city
+    
+    city = smooth_min(city, city2, 0.0);
+    
+    point = vec3(rotateZ(-6.0) * rotateX(2.0) * vec4(samplePoint + vec3(-14.4, -12.0, -5.5), 1.0));
+    float reflectiveBit = sdBox(point, vec3(0.0, 1.5, 1.0));
+    
+    //left city
+    point = vec3(rotateZ(6.0) * vec4(samplePoint + vec3(20.0, -13.0, -7.0), 1.0));    
+    centerCity = sdBox(point, vec3(2.5,4.0,0.2));
+    float city3 = centerCity;
+    //last one!
+    point = vec3(rotateZ(6.0) * vec4(samplePoint + vec3(19.0, -3.0, -9.0), 1.0));
+    centerCity4 = sdBox(point, vec3(0.2,15.0,0.1));
+    city3 = smooth_min(city3, centerCity4, 0.0);
+    //left city
+    
+    city = smooth_min(city, city2, 0.0);
+    city = smooth_min(city, city3, 0.0);
+   
+   	//////// TRAIN /////////
+
+    vec3 pos = samplePoint + vec3(2.0 * (iTime - float(25 * int(iTime/25.0))), 0.0, 0.0);
+
+    float train = sdRoundBox(pos + vec3(-17.0,4.6, -1.55), vec3(1.0,0.1,0.05), 0.1);
+
+    for (int i = 0; i < 4; ++i) {
+        float t = sdRoundBox(pos + vec3(-17.0 - float(i + 1) * 2.3,4.6, -1.55), vec3(1.0,0.1,0.05), 0.1);
+        train = smooth_min(train, t, 0.2);
+    }
+    
+    //front part
+    float light = sdBox(pos + vec3(-15.8,4.6, -1.50), vec3(0.05, 0.1, 0.1));
+    
+    //train, tracks, city, cliffs, darkCliffDist, groundDist
+    if (reflectiveBit < city && reflectiveBit < train && reflectiveBit < tracks
+       && reflectiveBit < groundDist) {
+        return vec2(reflectiveBit, 2.0);
+    }
+    if (train < tracks && train < city
+       && train < groundDist && train < light) {
+        return vec2(train, 6.0);
+    }
+    if (light < tracks && light < city
+       && light < groundDist && light < train) {
+        return vec2(light, 7.0);
+    }
+    if (city < train && city < tracks 
+        && city < groundDist) {
+        return vec2(city, 5.0);
+    }
+    else if (tracks < groundDist
+              && tracks < city && tracks < train) {
+      	return vec2(tracks, 3.0);  
+    } else if (groundDist < city && groundDist < train && groundDist < tracks
+              	) {
+     	return vec2(groundDist, 4.0);   
+    } else {
+     	return vec2(MAX_DIST, 0.0);   
+    }
+}
+
+vec2 rayMarch(vec3 origin, vec3 dir) {
+  float depth = MIN_DIST;
+  for (int i = 0; i < int(MAX_MARCHING_STEPS); i++) {
+    vec2 dist = sceneMap(origin + depth * dir);
+    if (dist.x < EPSILON) {
+        // We're inside the scene surface!
+        return vec2(depth, dist.y);
+    }
+    // Move along the view ray
+    depth += dist.x;
+
+    if (depth >= MAX_DIST) {
+        // Gone too far; give up
+        return vec2(MAX_DIST, 0.0);
+    }
+  }
+  return vec2(MAX_DIST, 0.0);
+}
+
+vec3 estimateNormal(vec3 p) {
+    return normalize(vec3(
+        sceneMap(vec3(p.x + EPSILON, p.y, p.z)).x - sceneMap(vec3(p.x - EPSILON, p.y, p.z)).x,
+        sceneMap(vec3(p.x, p.y + EPSILON, p.z)).x - sceneMap(vec3(p.x, p.y - EPSILON, p.z)).x,
+        sceneMap(vec3(p.x, p.y, p.z  + EPSILON)).x - sceneMap(vec3(p.x, p.y, p.z - EPSILON)).x
+    ));
+}
+
+float softShadow( in vec3 dir, in vec3 origin, float k )
+{
+    float res = 1.0;
+    float r = MIN;
+    for (float t = MIN; t < 10000000.0; t += 0.1) {
+        vec2 m = sceneMap(origin + r * dir);
+        if (m.y != 0.0 && m.x < 0.001) {
+            return 0.0; //in shadow
+        }
+        res = min(res, k * m.x / r);
+        r += m.x;
+        if (r > MAX) {
+            break;
+        }
+    }
+    return res;
+    
+}
+
+float occlude(vec3 point, vec3 normal, float stepsize, float k, float self) {
+ float ao = 0.0;
+    for (int i = 0; i < 5; ++i) {
+        if (sceneMap(point + normal*float(i)*stepsize).y != 0.0 &&
+            sceneMap(point + normal*float(i)*stepsize).y != self) {
+           ao += pow(2.0, 1.0 / float(i)) * (float(i)*stepsize - sceneMap(point + normal*float(i)*stepsize).x); 
+        }
+    }
+    ao = 1.0 - k * ao;
+    return ao;
+}
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+    
+	float time = 24.0;
+	
+	vec2 position = (fragCoord.xy);
+
+	float color = pow(noise(fragCoord.xy + 0.2), 30.0) * 20.0;
+
+	float r1 = noise(fragCoord.xy*noise(vec2(sin(time*0.01))));
+	float r2 = noise(fragCoord.xy*noise(vec2(cos(time*0.01), sin(time*0.01))));
+	float r3 = noise(fragCoord.xy*noise(vec2(sin(time*0.05), cos(time*0.05))));
+	
+    //gradient bg color by lerping!!
+    vec3 skyColor = vec3(72.0 / 255.0, 55.0 / 255.0, 41.0 / 255.0);
+    vec3 horizonColor = vec3(199.0 / 255.0, 149.0 / 255.0, 129.0 / 255.0);
+    
+    vec4 lights[5];
+    
+    lights[0] = vec4(-3.0,0.5,-3.0,1.0); //fs_LightVec
+    lights[1] = vec4(0.0,0.0,2.0, 1.0); //fill light
+    lights[2] = vec4(-6.0,5.0,0.0,1.0); //super bright light ground
+    lights[3] = vec4(-2.0,-3.0,3.0,1.0); //super bright light sky
+    lights[4] = vec4(3.0,0.0,0.0,1.0); //sky light 2
+    
+    vec4 lightColors[3];
+
+    vec2 uv = fragCoord.xy / iResolution.xy;
+    
+    uv = uv * 2.0 - 1.0;
+    
+    uv.x *= iResolution.x / iResolution.y;
+    
+    vec3 origin = vec3(0.0,0.0,-8.0);
+    
+    vec3 ray = normalize(vec3(uv, 1.0));
+    
+	vec2 state = rayMarch(origin, ray);
+    
+    
+    if (state.x > MAX_DIST - 1.0) {
+        vec2 uv = fragCoord/iResolution.xy;
+    	vec4 bufferColor = texture(iChannel0, uv);
+        if (bufferColor.x != 0.0) {
+            fragColor = bufferColor;
+        }
+    	else if (color*r1 > 0.3) {
+            vec3 intensity = vec3(mix(0.7,1.0,(fragCoord.y / iResolution.y)*2.0 - 1.0));
+			fragColor = vec4(vec3(color*r1, color*r2, color*r3)*intensity, 1.0);
+    	} else {
+        	fragColor = vec4(myLerp(horizonColor, skyColor, fragCoord.y / iResolution.y + 0.1), 1.0);
+   		}
+    } else {
+        if (state.y == 1.0) {
+            fragColor = vec4(141.0 / 255.0, 85.0 / 255.0, 78.0 / 255.0, 1.0);
+        } else if (state.y == 2.0) {
+			// 244, 235, 66 reflective thing
+            fragColor = vec4(239.0 / 255.0, 228.0 / 255.0, 155.0 / 255.0, 1.0);
+        } else if (state.y == 3.0) {
+            //54 46 45
+        	float ambientTerm = 0.2;    // small float value to simulate ambient lighting. ensures that
+                                // faces not lit by point of light are not completely black
+			vec3 p = origin + state.x*ray;
+  			vec3 n = estimateNormal(p);
+
+    		// Material base color (before shading)
+    		vec4 diffuseColor = vec4(vec3(54.0 / 255.0, 46.0 / 255.0, 45.0 / 255.0), 1.0);
+
+    		// Calculate the diffuse term for Lambert shading
+            float lightIntensity = 0.0;
+            float diffuseTerm = 0.0;
+            float shadow = 0.0;
+            vec3 lightColor = vec3(1, 1, 1);
+            for (int i = 0; i < 2; i++) {
+				diffuseTerm += clamp(dot(vec4(n,1.0), normalize(lights[i])), 0.0, 1.0);
+    			diffuseTerm = clamp(diffuseTerm, 0.0, 1.0);     // (for avoiding negative lighting values)
+
+    			vec3 V = normalize(ray);    // view direction
+    			vec3 L = vec3(normalize(lights[i]));// light direction
+    			vec3 H = normalize((V + L) / 2.0);// half-way between light/view
+
+    			vec3 N = vec3(n);  // normal of fragment
+
+    			float specularStrength = 0.3;
+    			float specularIntensity = max(pow(dot(H, N), 5.0), 0.0);
+
+    			float specularTerm = specularIntensity * specularStrength;
+
+    			lightIntensity += diffuseTerm + ambientTerm + specularTerm;   // color multiplier
+				shadow += softShadow(normalize(lights[i].xyz), p, 2.0);
+            }
+    		vec3 col = (diffuseColor.rgb * shadow * lightIntensity * lightColor) / 2.0;
+    		// Compute final shaded color
+    		fragColor = vec4(col, diffuseColor.a);
+            //fragColor = vec4(vec3(54.0 / 255.0, 46.0 / 255.0, 45.0 / 255.0) * col, 1.0);
+        }
+        ///////GROUND//////
+        else if (state.y == 4.0) {
+            //152 94 90
+            float ambientTerm = 0.2;
+			vec3 p = origin + state.x*ray;
+  			vec3 n = estimateNormal(p);
+
+    		// Material base color (before shading)
+    		vec4 diffuseColor = vec4(vec3(152.0 / 255.0, 94.0 / 255.0, 90.0 / 255.0), 1.0);
+
+            
+            float lightIntensity = 0.0;
+            float blinnTerm;
+            float diffuseTerm = 0.0;
+            float shadow = 0.0;
+            vec3 lightColor = vec3(1, 1, 1);
+            for (int i = 0; i < 3; i++) {
+				diffuseTerm += clamp(dot(vec4(n,1.0), normalize(lights[i])), 0.0, 1.0);
+    			//diffuseTerm = clamp(diffuseTerm, 0.0, 1.0);     // (for avoiding negative lighting values)
+
+    			vec3 V = normalize(ray);    // view direction
+    			vec3 L = vec3(normalize(lights[i]));          // light direction
+    			vec3 H = normalize((V + L) / 2.0);                // half-way between light/view
+
+    			vec3 N = vec3(n);  // normal of fragment
+
+    			float specularStrength = 0.3;
+    			float specularIntensity = max(pow(dot(H, N), 5.0), 0.0);
+
+    			float specularTerm = specularIntensity * specularStrength;
+                
+                blinnTerm += max(pow(dot(normalize(H), normalize(N)), 30.0), 0.0);
+    			blinnTerm = clamp(blinnTerm,0.0,1.0);
+
+    			lightIntensity += 0.8*(diffuseTerm + ambientTerm + specularTerm);   // color multiplier
+				shadow += softShadow(normalize(vec3(lights[i])), p, 3.2 );
+            }
+    
+    		vec3 col = ((diffuseColor.rgb * lightIntensity * lightColor + blinnTerm) * shadow) / 3.0;
+    		float ao = occlude(p, n, 0.5, 0.15, 4.0);
+            // Compute final shaded color
+    		fragColor = vec4(col * ao, diffuseColor.a);
+    
+     	 } else if (state.y == 5.0) {
+                //74 45 33
+            float ambientTerm = 0.2;
+            vec3 p = origin + state.x*ray;
+  			vec3 n = estimateNormal(p);
+
+    		// Material base color (before shading)
+    		vec4 diffuseColor = vec4(vec3(60.0 / 255.0, 38.0 / 255.0, 24.0 / 255.0), 1.0);
+
+            float lightIntensity = 0.0;
+            float diffuseTerm = 0.0;
+            float shadow = 0.0;
+            vec3 lightColor = vec3(1, 1, 1);
+            for (int i = 0; i < 5; i++) {
+                if (i == 2) {
+                    continue;
+                }
+                if (i == 3 || i == 4) {
+                    lightColor += vec3(141.0 / 255.0, 85.0 / 255.0, 78.0 / 255.0);
+                } else {
+                    lightColor += vec3(1, 1, 1);
+                }
+				diffuseTerm += clamp(dot(vec4(n,1.0), normalize(lights[i])), 0.0, 1.0);
+    			diffuseTerm = clamp(diffuseTerm, 0.0, 1.0);     // (for avoiding negative lighting values)
+
+    			vec3 V = normalize(ray);    // view direction
+    			vec3 L = vec3(normalize(lights[i]));          // light direction
+    			vec3 H = normalize((V + L) / 2.0);                // half-way between light/view
+
+    			vec3 N = vec3(n);  // normal of fragment
+
+    			float specularStrength = 0.3;
+    			float specularIntensity = max(pow(dot(H, N), 5.0), 0.0);
+
+    			float specularTerm = specularIntensity * specularStrength;
+				
+    			lightIntensity += 0.5 * diffuseTerm + ambientTerm + specularTerm;   // color multiplier
+				shadow += softShadow(normalize(vec3(lights[i])), p, 3.2 );
+            }
+        	
+			vec3 col = ((diffuseColor.rgb * lightIntensity) * shadow) * (lightColor / 4.0) / 4.0;
+
+    		// Compute final shaded color
+    		fragColor = vec4(col, diffuseColor.a);
+            
+        } else if (state.y == 6.0) {
+            //254 232 238
+            float ambientTerm = 0.2;    // small float value to simulate ambient lighting. ensures that
+                                // faces not lit by point of light are not completely black
+			vec3 p = origin + state.x*ray;
+  			vec3 n = estimateNormal(p);
+
+    		// Material base color (before shading)
+    		vec4 diffuseColor = vec4(vec3(254.0 / 255.0, 232.0 / 255.0, 238.0 / 255.0), 1.0);
+
+            
+            float lightIntensity = 0.0;
+            float diffuseTerm = 0.0;
+            float shadow = 0.0;
+            vec3 lightColor = vec3(1, 1, 1);
+            for (int i = 1; i < 2; i++) {
+				diffuseTerm += clamp(dot(vec4(n,1.0), normalize(lights[i])), 0.0, 1.0);
+    			diffuseTerm = clamp(diffuseTerm, 0.0, 1.0);     // (for avoiding negative lighting values)
+
+    			vec3 V = normalize(ray);    // view direction
+    			vec3 L = vec3(normalize(lights[i]));          // light direction
+    			vec3 H = normalize((V + L) / 2.0);                // half-way between light/view
+
+    			vec3 N = vec3(n);  // normal of fragment
+
+    			float specularStrength = 0.3;
+    			float specularIntensity = max(pow(dot(H, N), 5.0), 0.0);
+
+    			float specularTerm = specularIntensity * specularStrength;
+
+    			lightIntensity += diffuseTerm + ambientTerm + specularTerm;
+            }
+        	
+			vec3 col = (diffuseColor.rgb * lightIntensity * lightColor);
+			float ao = occlude(p, n, 0.5, 0.3, 6.0);
+    		fragColor = vec4(col * ao, diffuseColor.a);
+        } else if (state.y == 7.0) {
+       		fragColor = vec4(1.0);
+        }
+        
+    }
+
+}
