@@ -131,6 +131,8 @@ float smooth_min(float a, float b, float k) {
     return mix(b, a, h) - k * h * (1.0 - h);
 }
 
+float opUnion( float d1, float d2 ) {  return min(d1,d2); }
+
 float parabola(float x, float k) {
 	return pow(4.0*x*(1.0 - x), k);
 }
@@ -200,12 +202,12 @@ vec2 sceneMap(vec3 samplePoint) {
                                                  -6.0 - 6.0 * rand(vec2(x,z)), 
                                                  -5.0 - 0.2 * float(z));
             float cit = sdBox(pos, vec3(0.2, 5.0 + 2.0 * rand(vec2(x,z)), 1.0)); //vec3(2.0,random3(pos.xz), 1.0)
-            centerCity = smooth_min(centerCity, cit, 0.0);
+            centerCity = opUnion(centerCity, cit);
         }
     }
 
 	float centerCity4 = sdBox(samplePoint - vec3(-1.0, 0.0, 6.0), vec3(0.2,8.0,0.1));
-    float city = smooth_min(centerCity, centerCity4, 0.0);
+    float city = opUnion(centerCity, centerCity4);
     
     //right city
     vec3 point = vec3(rotateZ(-6.0) * vec4(samplePoint + vec3(-15.0, -7.0, -5.0), 1.0));    
@@ -220,17 +222,17 @@ vec2 sceneMap(vec3 samplePoint) {
                                                                  -5.0 - 1.0 * float(z)), 
                                               					 1.0));
     		centerCity4 = sdBox(point, vec3(0.2,6.0 + 2.0 * rand(vec2(x,z)),0.2));
-    		city2 = smooth_min(city2, centerCity4, 0.0);
+    		city2 = opUnion(city2, centerCity4);
         }
     }
     
     //last one!!
     point = vec3(rotateZ(-6.0) * vec4(samplePoint + vec3(-14.0, 0.0, -7.0), 1.0));
     centerCity4 = sdBox(point, vec3(0.2,8.0,0.1));
-    city2 = smooth_min(city2, centerCity4, 0.0);
+    city2 = opUnion(city2, centerCity4);
     //right city
     
-    city = smooth_min(city, city2, 0.0);
+    city = opUnion(city, city2);
     
     point = vec3(rotateZ(-6.0) * rotateX(2.0) * vec4(samplePoint + vec3(-14.4, -12.0, -5.5), 1.0));
     float reflectiveBit = sdBox(point, vec3(0.0, 1.5, 1.0));
@@ -356,9 +358,9 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
 
 	float color = pow(noise(fragCoord.xy + 0.2), 30.0) * 20.0;
 
-	float r1 = noise(fragCoord.xy*noise(vec2(sin(time*0.01))));
-	float r2 = noise(fragCoord.xy*noise(vec2(cos(time*0.01), sin(time*0.01))));
-	float r3 = noise(fragCoord.xy*noise(vec2(sin(time*0.05), cos(time*0.05))));
+	float r1 = noise(fragCoord.xy*noise(vec2(sin(iTime*0.01))));
+	float r2 = noise(fragCoord.xy*noise(vec2(cos(iTime*0.01), sin(iTime*0.01))));
+	float r3 = noise(fragCoord.xy*noise(vec2(sin(iTime*0.05), cos(iTime*0.05))));
 	
     //gradient bg color by lerping!!
     vec3 skyColor = vec3(72.0 / 255.0, 55.0 / 255.0, 41.0 / 255.0);
